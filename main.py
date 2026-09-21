@@ -15,6 +15,13 @@ from qtf_mcp.symbols import load_symbols
 from starlette.middleware.cors import CORSMiddleware
 import uvicorn
 
+from mcp.server.transport_security import TransportSecuritySettings
+
+
+security = TransportSecuritySettings(
+    enable_dns_rebinding_protection = False,
+)
+
 
 
 @click.command()
@@ -32,11 +39,11 @@ def main(port: int, transport: str) -> int:
   mcp_app.settings.log_level = "WARNING"
   logger.info(f"Starting MCP app on port {port} with transport {transport}")
   if transport == "streamable-http":
-    app = mcp_app.streamable_http_app(streamable_http_path="/cnstock/mcp", stateless_http=True)
+    app = mcp_app.streamable_http_app(streamable_http_path="/cnstock/mcp", stateless_http=True, transport_security=security)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     uvicorn.run(app, host="0.0.0.0", port=port)  # type: ignore
   else:
-    app = mcp_app.sse_app( sse_path="/cnstock/sse", message_path="/cnstock/messages")
+    app = mcp_app.sse_app( sse_path="/cnstock/sse", message_path="/cnstock/messages", transport_security=security)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     uvicorn.run(app, host="0.0.0.0", port=port)
   return 0

@@ -2,7 +2,9 @@ from io import StringIO
 
 from mcp.server.mcpserver import Context, MCPServer
 from . import research
+import logging
 
+logger = logging.getLogger("qtf_mcp")
 
 # class QtfMCP(MCPServer):
 
@@ -12,7 +14,9 @@ from . import research
 #     return super_app
 
 # Create an MCP server
-mcp_app = MCPServer("CnStock")
+mcp_app = MCPServer("CnStock",
+                    
+                    )
 
 
 
@@ -22,17 +26,23 @@ async def brief(symbol: str, ctx: Context) -> str:
   - basic data
   - trading data
   Args:
-    symbol (str): Stock symbol, must be in the format of "SH000001" or "SZ000001", you should infer user inputs like stock name to stock symbol
+    symbol (str): Stock symbol, must be in the format of "SH600000" or "SZ000001", you should infer user inputs like stock name to stock symbol
   """
   who = ctx.request_context.request.client.host  # type: ignore
-  raw_data = await research.load_raw_data(symbol, who)
-  buf = StringIO()
-  if len(raw_data) == 0:
-    return "No data found for symbol: " + symbol
-  research.build_basic_data(buf, symbol, raw_data)
-  research.build_trading_data(buf, symbol, raw_data)
-  """Get brief information for a given stock symbol"""
-  return buf.getvalue()
+  try:
+    raw_data = await research.load_raw_data(symbol, who)
+    buf = StringIO()
+    if len(raw_data) == 0:
+      msg = f"No data found for symbol: {symbol}"
+      return msg
+    research.build_basic_data(buf, symbol, raw_data)
+    research.build_trading_data(buf, symbol, raw_data)
+    """Get brief information for a given stock symbol"""
+    return buf.getvalue()
+  except:
+    msg = f"{who} No data found for symbol: {symbol}"
+    logging.info(msg)
+    return msg
 
 
 @mcp_app.tool()
@@ -45,14 +55,20 @@ async def medium(symbol: str, ctx: Context) -> str:
     symbol (str): Stock symbol, must be in the format of "SH000001" or "SZ000001", you infer convert user inputs like stock name to stock symbol
   """
   who = ctx.request_context.request.client.host  # type: ignore
-  raw_data = await research.load_raw_data(symbol, who)
-  buf = StringIO()
-  if len(raw_data) == 0:
-    return "No data found for symbol: " + symbol
-  research.build_basic_data(buf, symbol, raw_data)
-  research.build_trading_data(buf, symbol, raw_data)
-  research.build_financial_data(buf, symbol, raw_data)
-  return buf.getvalue()
+  try:
+    raw_data = await research.load_raw_data(symbol, who)
+    buf = StringIO()
+    if len(raw_data) == 0:
+      msg = f"No data found for symbol: {symbol}"
+      return msg
+    research.build_basic_data(buf, symbol, raw_data)
+    research.build_trading_data(buf, symbol, raw_data)
+    research.build_financial_data(buf, symbol, raw_data)
+    return buf.getvalue()
+  except:
+    msg = f"{who} No data found for symbol: {symbol}"
+    logging.info(msg)
+    return msg
 
 
 @mcp_app.tool()
@@ -66,12 +82,18 @@ async def full(symbol: str, ctx: Context) -> str:
     symbol (str): Stock symbol, must be in the format of "SH000001" or "SZ000001", you should infer user inputs like stock name to stock symbol
   """
   who = ctx.request_context.request.client.host  # type: ignore
-  raw_data = await research.load_raw_data(symbol, who)
-  buf = StringIO()
-  if len(raw_data) == 0:
-    return "No data found for symbol: " + symbol
-  research.build_basic_data(buf, symbol, raw_data)
-  research.build_trading_data(buf, symbol, raw_data)
-  research.build_financial_data(buf, symbol, raw_data)
-  research.build_technical_data(buf, symbol, raw_data)
-  return buf.getvalue()
+  try:
+    raw_data = await research.load_raw_data(symbol, who)
+    buf = StringIO()
+    if len(raw_data) == 0:
+      msg = f"No data found for symbol: {symbol}"
+      return msg
+    research.build_basic_data(buf, symbol, raw_data)
+    research.build_trading_data(buf, symbol, raw_data)
+    research.build_financial_data(buf, symbol, raw_data)
+    research.build_technical_data(buf, symbol, raw_data)
+    return buf.getvalue()
+  except:
+    msg = f"{who} No data found for symbol: {symbol}"
+    logging.info(msg)
+    return msg
