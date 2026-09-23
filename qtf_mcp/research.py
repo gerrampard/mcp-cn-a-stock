@@ -5,7 +5,7 @@ from typing import Dict, TextIO
 from numpy import ndarray
 from .indicators import KDJ, MACD, RSI,BBANDS, OBV, ATR
 
-from .datafeed import load_data_msd
+from .datafeed import load_data_msd, is_stock
 from .symbols import symbol_with_name
 import alpha as al
 
@@ -15,11 +15,6 @@ async def load_raw_data(
 ) -> Dict[str, ndarray]:
   return load_data_msd(symbol, n=400, who=who)
 
-
-def is_stock(symbol: str) -> bool:
-  if symbol.startswith("SH6") or symbol.startswith("SZ00") or symbol.startswith("SZ30"):
-    return True
-  return False
 
 
 def build_stock_data(symbol: str, raw_data: Dict[str, ndarray]) -> str:
@@ -81,7 +76,7 @@ def build_basic_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   symbol, name = list(symbol_with_name([symbol]))[0]
   sector = " ".join(filter_sector(data["SECTOR"]))  # type: ignore
   data_date = datetime.datetime.fromtimestamp(data["DATE"][-1].astype(int) / 1_000_000)
-  fin_dates = list(map(as_datetime, data["_DS_FINANCE"]["ts"]))
+  fin_dates = list(map(as_datetime, data["_DS_FINANCE"]["ts"])) if is_stock(symbol) else []
   if is_stock(symbol):
     fin = data["_DS_FINANCE"]
     last_year_index = yearly_fin_index(fin["ts"])
@@ -178,9 +173,9 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
   today_vol_est_ratio = today_volume_est_ratio(data)
   close = data["CLOSE"]
   volume = data["VOLUME"]
-  #volume[-1] = volume[-1] * today_vol_est_ratio  # Adjust today's volume
+  volume[-1] = volume[-1] * today_vol_est_ratio  # Adjust today's volume
   amount = data["AMOUNT"] / 1e8
-  #amount[-1] = amount[-1] * today_vol_est_ratio  # Adjust today's amount
+  amount[-1] = amount[-1] * today_vol_est_ratio  # Adjust today's amount
   high = data["HIGH"]
   low = data["LOW"]
 
@@ -211,7 +206,8 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
   print("", file=fp)
 
   print("## 成交量(万手)", file=fp)
-  print(f"- 当日: {volume[-1] / 1e6:.2f}", file=fp)
+  est_sign = '(盘中预估)' if  today_vol_est_ratio > 1 else ''
+  print(f"- 当日{est_sign}: {volume[-1] / 1e6:.2f}", file=fp)
   for p in periods:
     print(f"- {p}日均量: {volume[-p:].mean() / 1e6:.2f}", file=fp)
   print("", file=fp)
@@ -309,7 +305,7 @@ def quarter_label(date: datetime.datetime) -> str:
   elif date.month == 3:
     return f'{date.year}年一季报'
   else:
-    return None
+    return ''
 
 def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   if not is_stock(symbol):

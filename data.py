@@ -17,16 +17,16 @@ async def load_data(symbol: str, start_date: str, end_date: str) -> str:
   if len(raw_data) == 0:
     return "No data found for symbol: " + symbol
   research.build_basic_data(buf, symbol, raw_data)
-  #research.build_trading_data(buf, symbol, raw_data)
+  research.build_trading_data(buf, symbol, raw_data)
   research.build_financial_data(buf, symbol, raw_data)
-  #research.build_technical_data(buf, symbol, raw_data)
+  research.build_technical_data(buf, symbol, raw_data)
   return buf.getvalue()
 
 
 if __name__ == "__main__":
   import asyncio
 
-  symbol = "SZ002594"
+  symbol = "SH510300"
   start_date = "2025-01-01"
   end_date = "2026-01-01"
   result = asyncio.run(load_data(symbol, start_date, end_date))

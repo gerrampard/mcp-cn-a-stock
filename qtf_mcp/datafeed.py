@@ -21,6 +21,10 @@ if msd_host == "":
 
 STOCK_SECTOR: Dict[str, List[str]] | None = None
 
+def is_stock(symbol: str) -> bool:
+  if symbol.startswith("SH6") or symbol.startswith("SZ00") or symbol.startswith("SZ30"):
+    return True
+  return False
 
 def get_stock_sector() -> Dict[str, List[str]]:
   global STOCK_SECTOR
@@ -33,8 +37,30 @@ def get_stock_sector() -> Dict[str, List[str]]:
 def load_data_msd(
   symbol: str, n: int = 200, who: str = ""
 ) -> Dict[str, np.ndarray]:
-  # logger.info(f"align data {symbol} cost {t3 - t2} seconds")
   msd_client: MsdClient[pl.DataFrame] = create_msd_polars(msd_host)
+
+
+  if not is_stock(symbol):
+    day = msd_client.load(
+      objs=symbol,
+      tables=["stock_kline_1d"],
+      join='nan',
+      start=n,
+      end=None,
+    )
+    data = {}
+    day_np = msd_client.adaptor.to_numpy(day[symbol])
+    data["DATE"] = day_np["ts"]
+    data["OPEN"] =  day_np["open"]
+    data["HIGH"] =  day_np["high"]
+    data["LOW"] =  day_np["low"]
+    data["CLOSE"] =  day_np["close"]
+    data["CLOSE2"] = day_np["close"]   # raw price without adjustment
+    data["VOLUME"] = day_np["volume"].copy()
+    data["AMOUNT"] = day_np["amount"].copy()
+    data["SECTOR"] = get_stock_sector().get(symbol, [])
+    return data
+
 
 
   t1 = time()
