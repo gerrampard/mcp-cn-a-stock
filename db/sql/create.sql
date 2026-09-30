@@ -104,6 +104,19 @@ create table stock_f10 (
   engine = 'kv'
 );
 
+-- 板块 表, 使用 kv 存储
+-- kv 表仅包含2列, 其中第一列为主键, 第二列为JSON
+-- '__block_tree__' 主键对应的值是 JSON 树
+-- 树中的每个节点作为主键可以获取其股票列表
+-- 股票代码作为主键可以获取其所属板块列表
+create table stock_block (
+  obj string,
+  val string
+) WITH (
+  engine = 'kv'
+);
+
+
 -- 专业财务数据
 CREATE TABLE stock_financial (
   ts datetime,
