@@ -213,9 +213,9 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
   print("", file=fp)
 
   print("## 成交额(亿)", file=fp)
-  print(f"- 当日${est_sign}: {amount[-1]:.2f}", file=fp)
+  print(f"- 当日{est_sign}: {amount[-1]:.2f}", file=fp)
   if today_vol_est_ratio > 1.0:
-    print(f"- 当日(预估,仅参考): {amount[-1] * today_vol_est_ratio / 1e6:.2f}", file=fp)
+    print(f"- 当日(预估,仅参考): {amount[-1] * today_vol_est_ratio:.2f}", file=fp)
   for p in periods:
     print(f"- {p}日均额(亿): {amount[-(p+1):-1].mean():.2f}", file=fp)
   print("", file=fp)
