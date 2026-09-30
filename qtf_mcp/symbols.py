@@ -24,10 +24,16 @@ def load_symbols():
   load_markets("confs/markets.json")
 
 
+def _ensure_symbols_loaded():
+  if not SYMBOLS_SHSZ:
+    load_symbols()
+
+
 def symbol_with_name(symbols: Iterable[str]) -> Iterable[Tuple[str, str]]:
   """
   return symbol with name
   """
+  _ensure_symbols_loaded()
   for s in symbols:
     if s in SYMBOLS_SHSZ:
       yield (s, SYMBOLS_SHSZ[s][0])
@@ -39,6 +45,7 @@ def get_symbol_name(symbol: str) -> str:
   """
   get symbol name
   """
+  _ensure_symbols_loaded()
   if symbol in SYMBOLS_SHSZ:
     return SYMBOLS_SHSZ[symbol][0]
   else:

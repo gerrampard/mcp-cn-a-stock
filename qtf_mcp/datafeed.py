@@ -87,7 +87,7 @@ def load_data_msd(
   capital_flow = msd_client.load(
     objs=symbol,
     tables="stock_capital_flow",
-    start=20,
+    start=60,
     end=None,
   )
   capital_flow_np = msd_client.adaptor.to_numpy(capital_flow[symbol]['stock_capital_flow'])
@@ -104,6 +104,7 @@ def load_data_msd(
   data["CLOSE2"] = day_np["close"]   # raw price without adjustment
   data["VOLUME"] = day_np["volume"].copy()
   data["AMOUNT"] = day_np["amount"].copy()
+  data["DIVIDEND"] = day_np["dividend"].copy()
   data["TCAP"] = day_np["total_shares"]
   data["TCAP_A"] = day_np["tradable_a_shares"]
   data["NP"] = fin_np["f097"]

@@ -2,11 +2,12 @@ import datetime
 from io import StringIO
 from typing import Dict, TextIO
 
+import numpy as np
 from numpy import ndarray
 from .indicators import KDJ, MACD, RSI,BBANDS, OBV, ATR
 
 from .datafeed import load_data_msd, is_stock
-from .symbols import symbol_with_name
+from .symbols import symbol_with_name, get_symbol_name
 import alpha as al
 
 
@@ -89,12 +90,28 @@ def build_basic_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   print(f"- 行业概念: {sector}", file=fp)
   if is_stock(symbol):
     total_shares = data["TCAP"][-1]  # Convert to shares
-    total_amount = total_shares * data["CLOSE2"][-1]
+    circ_shares = data.get("TCAP_A", data["TCAP"])[-1]
+    close_price = data["CLOSE2"][-1]
+    total_amount = total_shares * close_price
+    circ_amount = circ_shares * close_price
+    total_mv = total_amount / 1e8
+    circ_mv = circ_amount / 1e8
     net_profit = data["NP"][last_year_index]
     pe_static = total_amount / net_profit if net_profit != 0 else float("inf")
     pe_dynamic = total_amount / (data["NP"][-1] / est_fin_ratio(fin_dates[-1])) if net_profit != 0 else float("inf")
     pe_ttm = total_amount / calc_ttm(data["NP"], fin_dates) if net_profit != 0 else float("inf")
     eps_ttm = calc_ttm(data["NP"], fin_dates) / total_shares
+
+    div_array = data.get("DIVIDEND", None)
+    if div_array is not None and len(div_array) > 0:
+      div_1y = float(np.sum(div_array[-240:])) if len(div_array) >= 240 else float(np.sum(div_array))
+      dividend_yield = (div_1y / close_price * 100) if close_price > 0 else 0.0
+    else:
+      div_1y = 0.0
+      dividend_yield = 0.0
+
+    print(f"- 总市值: {total_mv:.2f}亿", file=fp)
+    print(f"- 流通市值: {circ_mv:.2f}亿", file=fp)
     print(
       f"- 市盈率(静): {pe_static:.2f}",
       file=fp,
@@ -112,10 +129,14 @@ def build_basic_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
       file=fp,
     )
     print(
-      f"- 市净率: {data['CLOSE2'][-1] / data['NAVPS'][-1]:.2f}",
+      f"- 市净率: {close_price / data['NAVPS'][-1]:.2f}",
       file=fp,
     )
-    print(f"- 净资产收益率: {data['ROE'][-1]:.2f}", file=fp)
+    print(
+      f"- 股息率(ttm): {dividend_yield:.2f}% (近1年分红 {div_1y:.2f}元/股)",
+      file=fp,
+    )
+    print(f"- 净资产收益率: {data['ROE'][-1]:.2f}%", file=fp)
   print("", file=fp)
 
 
@@ -225,6 +246,13 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
     value = build_fund_flow(field, data)
     if value:
       print(value, file=fp)
+
+  main_amount = data.get("main_amount", None)
+  if main_amount is not None:
+    flow_periods = [p for p in [3, 5, 10, 20] if len(main_amount) >= p]
+    if flow_periods:
+      cum_str = ", ".join([f"{p}日: {main_amount[-p:].sum() / 1e8:+.2f}亿" for p in flow_periods])
+      print(f"- 主力多日累计: {cum_str}", file=fp)
   print("", file=fp)
 
   if is_stock(symbol):
@@ -237,6 +265,89 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
     print("", file=fp)
 
 
+COMMON_INDEX_NAMES = {
+  "SH000001": "上证指数",
+  "SH000300": "沪深300",
+  "SZ399001": "深证成指",
+  "SZ399006": "创业板指",
+  "SH000016": "上证50",
+  "SH000905": "中证500",
+  "SH000852": "中证1000",
+}
+
+
+def get_display_name(symbol: str) -> str:
+  name = get_symbol_name(symbol)
+  if not name:
+    name = COMMON_INDEX_NAMES.get(symbol, "")
+  return f"{symbol} {name}".strip() if name else symbol
+
+
+def build_benchmark_data(
+  fp: TextIO,
+  symbol: str,
+  stock_data: Dict[str, ndarray],
+  benchmark_datas: Dict[str, Dict[str, ndarray]],
+) -> None:
+  if not benchmark_datas:
+    return
+
+  close = stock_data.get("CLOSE")
+  if close is None or len(close) < 2:
+    return
+
+  periods = list(filter(lambda n: n <= len(close), [5, 20, 60, 120, 240]))
+  stock_label = get_display_name(symbol)
+
+  print("# 基准对比", file=fp)
+  print("", file=fp)
+
+  headers = ["标的", "当日"] + [f"{p}日累计" for p in periods]
+  print("| " + " | ".join(headers) + " |", file=fp)
+  print("| --- " * len(headers) + "|", file=fp)
+
+  stock_today = (close[-1] / close[-2] - 1) * 100
+  stock_period_changes = {p: (close[-1] / close[-p] - 1) * 100 for p in periods}
+
+  stock_cols = [stock_label, f"{stock_today:+.2f}%"] + [
+    f"{stock_period_changes[p]:+.2f}%" for p in periods
+  ]
+  print("| " + " | ".join(stock_cols) + " |", file=fp)
+
+  for bm_symbol, bm_data in benchmark_datas.items():
+    bm_close = bm_data.get("CLOSE")
+    if bm_close is None or len(bm_close) < 2:
+      continue
+
+    bm_today = (bm_close[-1] / bm_close[-2] - 1) * 100
+    bm_period_changes = {
+      p: (bm_close[-1] / bm_close[-p] - 1) * 100 if len(bm_close) >= p else float("nan")
+      for p in periods
+    }
+
+    bm_display = get_display_name(bm_symbol)
+    bm_cols = [bm_display, f"{bm_today:+.2f}%"] + [
+      f"{bm_period_changes[p]:+.2f}%" if not np.isnan(bm_period_changes[p]) else "-"
+      for p in periods
+    ]
+    print("| " + " | ".join(bm_cols) + " |", file=fp)
+
+    # 相对超额 (Alpha)
+    alpha_today = stock_today - bm_today
+    alpha_cols = [
+      "&nbsp;&nbsp;└ 超额(Alpha)",
+      f"{alpha_today:+.2f}%",
+    ] + [
+      f"{stock_period_changes[p] - bm_period_changes[p]:+.2f}%"
+      if not np.isnan(bm_period_changes[p])
+      else "-"
+      for p in periods
+    ]
+    print("| " + " | ".join(alpha_cols) + " |", file=fp)
+
+  print("", file=fp)
+
+
 def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> None:
   close = data["CLOSE"]
   high = data["HIGH"]
@@ -246,38 +357,102 @@ def build_technical_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> N
   if len(close) < 30:
     return
 
-  print("# 技术指标(最近30日)", file=fp)
-  print("", file=fp)
-
   kdj_k, kdj_d, kdj_j = KDJ(close, high, low, 9, 3)
-
   macd_diff, macd_dea = MACD(close, 12, 26, 9)
+  macd_bar = (macd_diff - macd_dea) * 2
 
   rsi_6 = RSI(close, 6)
   rsi_12 = RSI(close, 12)
   rsi_24 = RSI(close, 24)
 
   bb_upper, bb_middle, bb_lower = BBANDS(close) 
-
   obv = OBV(close, volume)
-
   atr = ATR(close, high, low, n=14)
+
+  ma5 = al.MA(close, 5)
+  ma10 = al.MA(close, 10)
+  ma30 = al.MA(close, 30)
+  ma60 = al.MA(close, 60)
+
+  if ma5[-1] > ma10[-1] > ma30[-1] > ma60[-1]:
+    trend_desc = "多头排列 (短中期均线强势上行)"
+  elif ma5[-1] < ma10[-1] < ma30[-1] < ma60[-1]:
+    trend_desc = "空头排列 (短中期均线弱势寻底)"
+  elif ma5[-1] > ma10[-1] and ma5[-1] > ma30[-1]:
+    trend_desc = "短期企稳偏强，中期蓄势整理"
+  elif ma5[-1] < ma10[-1] and ma5[-1] < ma30[-1]:
+    trend_desc = "短期承压回调，中期震荡整理"
+  else:
+    trend_desc = "均线交错纠缠，处于震荡整固格局"
+
+  bar_today = macd_bar[-1]
+  bar_prev = macd_bar[-2] if len(macd_bar) >= 2 else bar_today
+  if macd_diff[-1] > macd_dea[-1] and macd_diff[-2] <= macd_dea[-2]:
+    macd_desc = f"金叉形成，多方动能显现 (Bar: {bar_today:+.2f})"
+  elif macd_diff[-1] < macd_dea[-1] and macd_diff[-2] >= macd_dea[-2]:
+    macd_desc = f"死叉形成，空方动能释放 (Bar: {bar_today:+.2f})"
+  elif bar_today > 0:
+    macd_desc = f"红柱区间 (多头主导)，{'红柱继续放大' if bar_today > bar_prev else '红柱有所收敛'} (Bar: {bar_today:+.2f})"
+  else:
+    macd_desc = f"绿柱区间 (空头主导)，{'绿柱有所收窄 (空方衰竭)' if bar_today > bar_prev else '绿柱持续放大'} (Bar: {bar_today:+.2f})"
+
+  j_val = kdj_j[-1]
+  rsi6_val = rsi_6[-1]
+  signals = []
+  if j_val < 10:
+    signals.append(f"KDJ低位超卖 (J={j_val:.1f} < 10)")
+  elif j_val > 90:
+    signals.append(f"KDJ高位超买 (J={j_val:.1f} > 90)")
+  else:
+    signals.append(f"KDJ中性 (J={j_val:.1f})")
+
+  if rsi6_val < 20:
+    signals.append(f"RSI(6)超卖 ({rsi6_val:.1f} < 20)")
+  elif rsi6_val > 80:
+    signals.append(f"RSI(6)超买 ({rsi6_val:.1f} > 80)")
+  else:
+    signals.append(f"RSI(6)常态 ({rsi6_val:.1f})")
+  osc_desc = ", ".join(signals)
+
+  c_last = close[-1]
+  up_last, mid_last, low_last = bb_upper[-1], bb_middle[-1], bb_lower[-1]
+  if c_last >= up_last:
+    bb_desc = f"触及/突破上轨 (现价: {c_last:.2f} >= 上轨: {up_last:.2f}，上方阻力加大)"
+  elif c_last <= low_last:
+    bb_desc = f"触及/跌破下轨 (现价: {c_last:.2f} <= 下轨: {low_last:.2f}，下方支撑显现)"
+  elif c_last > mid_last:
+    bb_desc = f"中轨上方运行 (中轨: {mid_last:.2f}, 上轨: {up_last:.2f})"
+  else:
+    bb_desc = f"中轨下方运行 (下轨: {low_last:.2f}, 中轨: {mid_last:.2f})"
+
+  print("# 技术指标", file=fp)
+  print("", file=fp)
+  print("## 信号摘要", file=fp)
+  print(f"- 均线趋势: {trend_desc}", file=fp)
+  print(f"- MACD形态: {macd_desc}", file=fp)
+  print(f"- 摆动指标: {osc_desc}", file=fp)
+  print(f"- 布林带通道: {bb_desc}", file=fp)
+  print("", file=fp)
+
+  print("## 指标历史明细(最近30日)", file=fp)
+  print("", file=fp)
 
   date = [
     datetime.datetime.fromtimestamp(d.astype(int) / 1_000_000).strftime("%Y-%m-%d") for d in data["DATE"]
   ]
   columns = [
     ("日期", date),
-    ("MA(5)", al.MA(close, 5)),
-    ("MA(10)", al.MA(close, 10)),
-    ("MA(30)", al.MA(close, 30)),
-    ("MA(60)", al.MA(close, 60)),
+    ("MA(5)", ma5),
+    ("MA(10)", ma10),
+    ("MA(30)", ma30),
+    ("MA(60)", ma60),
     ("MA(120)", al.MA(close, 120)),
     ("KDJ.K", kdj_k),
     ("KDJ.D", kdj_d),
     ("KDJ.J", kdj_j),
     ("MACD DIF", macd_diff),
     ("MACD DEA", macd_dea),
+    ("MACD Bar", macd_bar),
     ("RSI(6)", rsi_6),
     ("RSI(12)", rsi_12),
     ("RSI(24)", rsi_24),
@@ -319,12 +494,18 @@ def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> N
   print("", file=fp)
   years = 0
   fields = [
-    # name, id, div, show
-    ("主营收入(亿元)", "f075", 1_0000_0000, True),
-    ("净利润(亿元)", "f097", 1_0000_0000, True),
-    ("摊薄每股收益", "f000", 1, True),
-    ("每股净资产", "f003", 1, True),
+    # name, id, div, is_pct
+    ("主营收入(亿元)", "f075", 1_0000_0000, False),
+    ("营收同比增长率", "f194", 1, True),
+    ("净利润(亿元)", "f097", 1_0000_0000, False),
+    ("净利润同比增长率", "f197", 1, True),
+    ("扣非营业利润(亿元)", "f088", 1_0000_0000, False),
+    ("摊薄每股收益", "f000", 1, False),
+    ("扣非每股收益", "f007", 1, False),
+    ("每股净资产", "f003", 1, False),
     ("净资产收益率", "f001", 1, True),
+    ("经营现金流净额(亿元)", "f108", 1_0000_0000, False),
+    ("资产负债率", "f223", 1, True),
   ]
 
   rows = []
@@ -338,9 +519,17 @@ def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> N
       continue
     row = [quarter_label(date)]
 
-    for _, field, div, show in fields:
-      if show:
-        row.append(fin[field][i] / div)
+    for _, field, div, is_pct in fields:
+      if field in fin and len(fin[field]) > i:
+        val = fin[field][i] / div
+        if np.isnan(val):
+          row.append("-")
+        elif is_pct:
+          row.append(f"{val:.2f}%")
+        else:
+          row.append(f"{val:.2f}")
+      else:
+        row.append("-")
     rows.append(row)
     if date.month == 12:
       years += 1
@@ -349,7 +538,7 @@ def build_financial_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> N
   print("| --- " * (len(rows) + 1) + "|", file=fp)
   for i in range(1, len(rows[0])):
     print(
-      f"| {fields[i - 1][0]} | " + " ".join([f"{r[i]:.2f} |" for r in rows]),
+      f"| {fields[i - 1][0]} | " + " ".join([f"{r[i]} |" for r in rows]),
       file=fp,
     )
 
