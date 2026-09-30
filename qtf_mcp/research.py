@@ -173,9 +173,7 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
   today_vol_est_ratio = today_volume_est_ratio(data)
   close = data["CLOSE"]
   volume = data["VOLUME"]
-  volume[-1] = volume[-1] * today_vol_est_ratio  # Adjust today's volume
   amount = data["AMOUNT"] / 1e8
-  amount[-1] = amount[-1] * today_vol_est_ratio  # Adjust today's amount
   high = data["HIGH"]
   low = data["LOW"]
 
@@ -206,16 +204,20 @@ def build_trading_data(fp: TextIO, symbol: str, data: Dict[str, ndarray]) -> Non
   print("", file=fp)
 
   print("## 成交量(万手)", file=fp)
-  est_sign = '(盘中预估)' if  today_vol_est_ratio > 1 else ''
+  est_sign = '(盘中)' if  today_vol_est_ratio > 1 else ''
   print(f"- 当日{est_sign}: {volume[-1] / 1e6:.2f}", file=fp)
+  if today_vol_est_ratio > 1.0:
+    print(f"- 当日(预估,仅参考): {volume[-1] * today_vol_est_ratio / 1e6:.2f}", file=fp)
   for p in periods:
-    print(f"- {p}日均量: {volume[-p:].mean() / 1e6:.2f}", file=fp)
+    print(f"- {p}日均量: {volume[-(p+1):-1].mean() / 1e6:.2f}", file=fp)
   print("", file=fp)
 
   print("## 成交额(亿)", file=fp)
-  print(f"- 当日: {amount[-1]:.2f}", file=fp)
+  print(f"- 当日${est_sign}: {amount[-1]:.2f}", file=fp)
+  if today_vol_est_ratio > 1.0:
+    print(f"- 当日(预估,仅参考): {amount[-1] * today_vol_est_ratio / 1e6:.2f}", file=fp)
   for p in periods:
-    print(f"- {p}日均额(亿): {amount[-p:].mean():.2f}", file=fp)
+    print(f"- {p}日均额(亿): {amount[-(p+1):-1].mean():.2f}", file=fp)
   print("", file=fp)
 
   print("## 资金流向", file=fp)
